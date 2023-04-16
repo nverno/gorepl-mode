@@ -62,21 +62,19 @@
 
 ;; MANY THANKS to masteringenmacs for this:
 ;; https://www.masteringemacs.org/article/comint-writing-command-interpreter
-(defun gorepl--run-gore (args)
+(defun gorepl--run-gore (&optional args)
   "Run an inferior instance of `gore' inside Emacs."
-  (let* ((buffer (comint-check-proc gorepl-buffer-name)))
-    ;; pop to the "*GO REPL Buffer*" buffer if the process is dead, the
-    ;; buffer is missing or it's got the wrong mode.
-    (display-buffer
-     (if (or buffer (not (derived-mode-p 'gorepl-mode))
-             (comint-check-proc (current-buffer)))
-         (get-buffer-create (or buffer gorepl-buffer))
-       (current-buffer)))
-    ;; create the comint process if there is no buffer.
-    (unless buffer
-      (apply 'make-comint-in-buffer gorepl-buffer-name buffer
-             gorepl-command nil args)
-      (gorepl-mode))))
+  (let ((buffer (get-buffer-create gorepl-buffer)))
+    (unless (comint-check-proc buffer)
+      (with-current-buffer buffer
+        (apply 'make-comint-in-buffer gorepl-buffer-name buffer
+               gorepl-command nil args)
+        (gorepl-mode)))
+    (when buffer
+      (pop-to-buffer buffer))))
+
+(define-derived-mode gorepl-mode comint-mode "GoREPL"
+  "Major mode for interacting with an inferior Go REPL process.")
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;
@@ -91,7 +89,8 @@
 (defun gorepl-run ()
   "Start or switch to the GoREPL buffer"
   (interactive)
-  (message "Entering gore session...")
+  (unless (comint-check-proc gorepl-buffer)
+    (message "Entering gore session..."))
   (gorepl--run-gore '()))
 
 (defun gorepl-eval (stmt)
@@ -106,7 +105,6 @@
 (defun gorepl-eval-region (begin end)
   "Evaluate region selected."
   (interactive "r")
-  (gorepl-mode t)
   (let ((cmd (buffer-substring begin end)))
     (gorepl-eval cmd)))
 
@@ -165,7 +163,7 @@
                                   (format-time-string
                                    "%a %b %d %H:%M:%S %Z %Y"
                                    (current-time))
-                                  (user-original-login-name))
+                                  (user-login-name))
                           'utf-8
                           name)))
         (let ((stmt (format ":write %s" name)))
@@ -239,26 +237,26 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defvar gorepl-mode-map
+(defvar gorepl-minor-mode-map
   (let ((map (make-sparse-keymap)))
             (define-key map (kbd "C-c C-g") #'gorepl-run)
             (define-key map (kbd "C-c C-l") #'gorepl-run-load-current-file)
             (define-key map (kbd "C-c C-e") #'gorepl-eval-region)
             (define-key map (kbd "C-c C-r") #'gorepl-eval-line)
             map)
-  "Mode map for `gorepl-mode'.")
+  "Mode map for `gorepl-minor-mode'.")
 
-(defcustom gorepl-mode-lighter " Gorepl"
-  "Text displayed in the mode line (Lighter) if `gorepl-mode' is active."
+(defcustom gorepl-minor-mode-lighter " Gorepl"
+  "Text displayed in the mode line (Lighter) if `gorepl-minor-mode' is active."
   :group 'gorepl
   :type 'string)
 
 ;;;###autoload
-(define-minor-mode gorepl-mode
-  "A minor mode for run a go repl on top of gore"
+(define-minor-mode gorepl-minor-mode
+  "A minor mode to interact with an inferior Go REPL on top of gore."
   :group 'gorepl
-  :lighter gorepl-mode-lighter
-  :keymap gorepl-mode-map)
+  :lighter gorepl-minor-mode-lighter
+  :keymap gorepl-minor-mode-map)
 
 
 (provide 'gorepl-mode)
