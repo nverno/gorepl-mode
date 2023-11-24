@@ -6,7 +6,7 @@
 ;; Maintainer: Manuel Alonso <manuteali@gmail.com>
 ;; URL: http://www.github.com/manute/gorepl-mode
 ;; Version: 1.0.0
-;; Package-Requires: ((emacs "24") (s "1.11.0") (f "0.19.0") (hydra "0.13.0"))
+;; Package-Requires: ((emacs "24") (s "1.11.0") (f "0.19.0"))
 ;; Keywords: languages, go, golang, gorepl
 
 ;; This file is NOT part of GNU Emacs.
@@ -33,7 +33,8 @@
 
 (require 's)
 (require 'f)
-(require 'hydra)
+(require 'transient)
+(require 'comint)
 
 (defgroup gorepl nil
   "GO repl interactive"
@@ -204,31 +205,22 @@
   (call-interactively 'gorepl-eval-line)
   (call-interactively 'next-logical-line))
 
-(defhydra gorepl-hydra (:color teal :hint nil)
-  "
-^(Go RE)PL
- Run^              ^| ^Eval^         | ^REPL^
--^-----------------^+--------------+------------------------------------
- _d_: Run empty     | _j_: Selection | _t_: Import <pkg path>
- _f_: Run this file | _k_: Line+Step | _y_: Print this source
- _q_: Quit Hydra    | _K_: Line      | _u_: Write this sourceto <file name>
-                  ^^|              ^^| _o_: List `these' actual commands
-                  ^^|              ^^| _r_: Restart this REPL
-                  ^^|              ^^| _p_: Quit this REPL (or C-d)
-"
-  ("d" gorepl-run)
-  ("f" gorepl-run-load-current-file)
-  ("j" gorepl-eval-region)
-  ("r" gorepl-restart)
-  ("k" gorepl-eval-line-goto-next-line :exit nil)
-  ("K" gorepl-eval-line)
-  ("t" gorepl-import)
-  ("y" gorepl-print)
-  ("u" gorepl-write)
-  ("i" gorepl-doc)
-  ("o" gorepl-help)
-  ("p" gorepl-quit)
-  ("q" nil))
+;;;###autoload(autoload 'gorepl-menu "gorepl-mode")
+(transient-define-prefix gorepl-menu ()
+  [["Run"
+    ("d" "Run empty" gorepl-run)
+    ("f" "Run this file" gorepl-run-load-current-file)]
+   ["Eval"
+    ("j" "Selection" gorepl-eval-region)
+    ("k" "Line+Step" gorepl-eval-line-goto-next-line :transient t)
+    ("K" "Line" gorepl-eval-line)]
+   ["REPL"
+    ("t" "Import <pkg path>" gorepl-import)
+    ("y" "Print this source" gorepl-print)
+    ("u" "Write this source to <filename>" gorepl-write)
+    ("o" "List `these' actual command" gorepl-help)
+    ("r" "Restart this REPL" gorepl-restart)
+    ("q" "Quit this REPL" gorepl-quit)]])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; DEFINE MINOR MODE
