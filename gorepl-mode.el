@@ -75,7 +75,9 @@
       (pop-to-buffer buffer))))
 
 (define-derived-mode gorepl-mode comint-mode "GoREPL"
-  "Major mode for interacting with an inferior Go REPL process.")
+  "Major mode for interacting with an inferior Go REPL process."
+  (setq-local comint-prompt-regexp "^gore> ")
+  (setq-local comint-prompt-read-only t))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;
