@@ -207,12 +207,12 @@
   (call-interactively 'gorepl-eval-line)
   (call-interactively 'next-logical-line))
 
-;;;###autoload(autoload 'gorepl-menu "gorepl-mode")
+;;;###autoload(autoload 'gorepl-menu "gorepl-mode" nil t)
 (transient-define-prefix gorepl-menu ()
-  [["Run"
+  [[ :if-not-mode gorepl-mode "Run"
     ("d" "Run empty" gorepl-run)
     ("f" "Run this file" gorepl-run-load-current-file)]
-   ["Eval"
+   [ :if-not-mode gorepl-mode "Eval"
     ("j" "Selection" gorepl-eval-region)
     ("k" "Line+Step" gorepl-eval-line-goto-next-line :transient t)
     ("K" "Line" gorepl-eval-line)]
