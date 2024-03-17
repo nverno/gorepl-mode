@@ -1,4 +1,4 @@
-;;; gorepl-mode.el --- Go REPL Interactive Development in top of Gore -*- lexical-binding: t -*-
+;;; gorepl-mode.el --- Go REPL Interactive Development in top of Gore. -*- lexical-binding: t -*-
 
 ;; Copyright © 2015-2016 Manuel Alonso
 
@@ -37,48 +37,70 @@
 (require 'comint)
 
 (defgroup gorepl nil
-  "GO repl interactive"
+  "Go repl."
   :prefix "gorepl-"
   :group 'applications
   :link '(url-link :tag "Github" "https://github.com/manute/gorepl-mode")
   :link '(emacs-commentary-link :tag "Commentary" "gorepl"))
 
-(defcustom gorepl-command
-  "gore"
+(defcustom gorepl-command "gore"
   "The command used to execute gore."
   :type 'string
   :group 'gorepl)
 
+(defcustom gorepl-arguments '("-autoimport")
+  "Default arguments for `gorepl-command'."
+  :type '(repeat string))
 
-(defcustom gorepl-mode-hook nil
-  "Hook called by `gorepl-mode'."
-  :type 'hook
-  :group 'gorepl)
-
+(defcustom gorepl-buffer-name "Gore"
+  "Default buffer name for the Gore repl."
+  :type 'string)
 
 (defconst gorepl-version "1.0.0")
-(defconst gorepl-buffer "*Go REPL*")
-(defconst gorepl-buffer-name "Go REPL")
 
+
+(defun gorepl-buffer ()
+  "Return inferior Gore buffer."
+  (if (derived-mode-p 'gorepl-mode)
+      (current-buffer)
+    (let ((buffer-name (format "*%s*" gorepl-buffer-name)))
+      (when (comint-check-proc buffer-name)
+        buffer-name))))
+
+(defun gorepl-process ()
+  (get-buffer-process (gorepl-buffer)))
+
+(defun gorepl-calculate-command (&optional prompt args)
+  "Calculate the command to run Gore.
+If PROMPT is non-nil, prompt user for command to run.
+ARGS override `gorepl-arguments'."
+  (let ((default (concat gorepl-command
+                         " " (mapconcat 'identity (or args gorepl-arguments) " "))))
+    (if prompt (read-shell-command "Run gore: " default) default)))
 
 ;; MANY THANKS to masteringenmacs for this:
 ;; https://www.masteringemacs.org/article/comint-writing-command-interpreter
-(defun gorepl--run-gore (&optional args)
-  "Run an inferior instance of `gore' inside Emacs."
-  (let ((buffer (get-buffer-create gorepl-buffer)))
-    (unless (comint-check-proc buffer)
+(defun gorepl--run-gore (&optional prompt arguments show)
+  "Run an inferior instance of Gore inside Emacs."
+  (let ((buffer (gorepl-buffer)))
+    (unless buffer
+      (let* ((buffer-name (format "*%s*" gorepl-buffer-name))
+             (cmdlist (split-string-and-unquote
+                       (gorepl-calculate-command prompt arguments)))
+             (program (car cmdlist))
+             (args (cdr cmdlist)))
+        (setq buffer (apply 'make-comint-in-buffer gorepl-buffer-name
+                            buffer-name program nil args)))
       (with-current-buffer buffer
-        (apply 'make-comint-in-buffer gorepl-buffer-name buffer
-               gorepl-command nil args)
         (gorepl-mode)))
-    (when buffer
-      (pop-to-buffer buffer))))
+    (when show
+      (pop-to-buffer buffer))
+    buffer))
 
 (define-derived-mode gorepl-mode comint-mode "GoREPL"
   "Major mode for interacting with an inferior Go REPL process."
   (setq-local comint-prompt-regexp "^gore> ")
   (setq-local comint-prompt-read-only t))
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; API
@@ -89,139 +111,120 @@
   (interactive)
   (message "GOREPL %s" gorepl-version))
 
-(defun gorepl-run ()
-  "Start or switch to the GoREPL buffer"
-  (interactive)
-  (unless (comint-check-proc gorepl-buffer)
-    (message "Entering gore session..."))
-  (gorepl--run-gore '()))
+(defun gorepl-run (&optional prompt show)
+  "Start or switch to the GoREPL buffer.
+With prefix PROMPT, read command to run Gore. When called interactively, or
+if SHOW is non-nil, switch to the repl buffer."
+  (interactive (list current-prefix-arg t))
+  (gorepl--run-gore prompt nil show))
 
-(defun gorepl-eval (stmt)
-  "Send `stmt' to gore, maybe starting it"
-  (interactive)
-  (gorepl-run)
-  (with-current-buffer gorepl-buffer
-    (insert stmt)
-    (comint-send-input)
-    (message (format "Just sent to gore: %s" stmt))))
+(defun gorepl-send-string (string &optional no-insert)
+  "Send STRING to gore inferior process."
+  (interactive (list (read-string "Gore command: ")))
+  (let ((buf (gorepl-buffer)))
+    (unless buf
+      (user-error "No Gore repl running."))
+    (with-current-buffer buf
+      (if no-insert
+          (comint-send-string (get-buffer-process (current-buffer)) string)
+        (insert string))
+      (comint-send-input))))
 
-(defun gorepl-eval-region (begin end)
-  "Evaluate region selected."
+(defun gorepl-send-region (begin end)
+  "Send region selected to Gore."
   (interactive "r")
-  (let ((cmd (buffer-substring begin end)))
-    (gorepl-eval cmd)))
+  (gorepl-send-string (buffer-substring-no-properties begin end)))
 
-(defun gorepl-eval-line (&optional arg)
+(defun gorepl-send-line (&optional arg)
   "Evaluate current line."
   (interactive "P")
-  (unless arg
-    (setq arg 1))
+  (or arg (setq arg 1))
   (when (> arg 0)
-    (gorepl-eval-region
-     (line-beginning-position)
-     (line-end-position arg))))
+    (gorepl-send-region (line-beginning-position) (line-end-position arg))))
 
-(defun gorepl-run-load-current-file ()
-  "Run a GoREPL with a context file in it"
-  (interactive)
-  (gorepl--run-gore (list "-context" (buffer-file-name))))
+(defun gorepl-load-file (filename &optional prompt show)
+  "Run a GoREPL with a context file in it.
+With prefix, prompt for FILENAME, otherwise load current buffer file.
+With multiple prefix arguments PROMPT to edit run command."
+  (interactive (list (if current-prefix-arg (read-file-name "Load file: ")
+                       (buffer-file-name))
+                     (> (prefix-numeric-value current-prefix-arg) 4)
+                     t))
+  (gorepl--run-gore
+   prompt
+   (append gorepl-arguments (list "-context" (expand-file-name filename)))
+   show))
 
-(defun gorepl-import ()
+(defun gorepl-import (pkg)
   "Import <pkg path>"
-  (interactive)
-  (catch 'err
-    (let ((name (read-string "Package path? ")))
-      (unless name
-        (message "No package specified")
-        (throw 'err nil))
-      (let ((name (s-trim (s-chomp name))))
-        (unless (s-present? name)
-          (message "No package specified")
-          (throw 'err nil))
-        (when (s-contains? " " name)
-          (message "Package names can't contain a space")
-          (throw 'err nil))
-        (message (format "Package specified: %s" name))
-        (let ((stmt (format ":import %s" name)))
-          (gorepl-eval stmt))))))
+  (interactive (list (read-string "Package path: ")))
+  (when (s-contains? " " pkg)
+    (user-error "Package names can't contain a space."))
+  (gorepl-send-string (format ":import %s" pkg)))
 
 (defun gorepl-print ()
   "Print the source code from this session"
   (interactive)
-  (gorepl-eval ":print"))
+  (gorepl-send-string ":print"))
 
 (defun gorepl-write ()
   "Write the source code from this session out to a file"
   (interactive)
   (let ((name (read-file-name "Output file name? ")))
-    (message (format "Output file name: %s" name))
-    (let ((name (f-expand name)))
-      (catch 'err
-        (when (s-blank? name)
-          (message "Aborted write: no file name given")
-          (throw 'err nil))
-        (if (f-exists? name) (progn (message "Stomping: %s" name) (f-touch name))
-          (progn
-            (f-write-text (format "// gore dump on `%s' by `%s'\n\n"
-                                  (format-time-string
-                                   "%a %b %d %H:%M:%S %Z %Y"
-                                   (current-time))
-                                  (user-login-name))
-                          'utf-8
-                          name)))
-        (let ((stmt (format ":write %s" name)))
-          (gorepl-eval stmt))))))
+    (when (s-blank? name)
+      (user-error "No file name given."))
+    (f-write-text (format "// gore dump on `%s' by `%s'\n\n"
+                          (format-time-string
+                           "%a %b %d %H:%M:%S %Z %Y"
+                           (current-time))
+                          (user-login-name))
+                  'utf-8
+                  name)
+    (gorepl-send-string (format ":write %s" name))))
 
-(defun gorepl-doc ()
+(defun gorepl-doc (exp-or-pkg)
   "Show documentation on <expression or package "
-  (interactive)
-  (let ((exp-or-pkg (read-string "Expression or package? ")))
-    (if (not exp-or-pkg) (message "Aborted documentation: no expression or package provided")
-      (let ((stmt (format ":doc %s" exp-or-pkg)))
-        (gorepl-eval stmt)))))
+  (interactive (list (read-string "Expression or package? ")))
+  (gorepl-send-string (format ":doc %s" exp-or-pkg)))
 
 (defun gorepl-help ()
-  "Show help"
+  "Show help."
   (interactive)
-  (let ((stmt ":help"))
-    (gorepl-eval stmt)))
+  (gorepl-send-string ":help"))
 
 (defun gorepl-quit ()
-  "Quit"
+  "Quit Gore repl."
   (interactive)
-  (if (comint-check-proc gorepl-buffer)
-      (let ((stmt ":quit"))
-        (gorepl-eval stmt))
-    (message "gore is already stopped")))
+  (gorepl-send-string ":quit"))
 
-(defun gorepl-restart ()
+(defun gorepl-restart (&optional show)
   "Restart gore. In others words: start a fresh gore session."
-  (interactive)
+  (interactive (list t))
   (gorepl-quit)
   (sleep-for 1)
-  (gorepl-run))
+  (gorepl-run nil show))
 
-(defun gorepl-eval-line-goto-next-line ()
+(defun gorepl-send-line-and-step ()
   "Evaluate this line and move to next."
   (interactive)
-  (call-interactively 'gorepl-eval-line)
+  (call-interactively 'gorepl-send-line)
   (call-interactively 'next-logical-line))
 
 ;;;###autoload(autoload 'gorepl-menu "gorepl-mode" nil t)
 (transient-define-prefix gorepl-menu ()
   [[ :if-not-mode gorepl-mode "Run"
     ("d" "Run empty" gorepl-run)
-    ("f" "Run this file" gorepl-run-load-current-file)]
-   [ :if-not-mode gorepl-mode "Eval"
-    ("j" "Selection" gorepl-eval-region)
-    ("k" "Line+Step" gorepl-eval-line-goto-next-line :transient t)
-    ("K" "Line" gorepl-eval-line)]
+    ("f" "Run file" gorepl-load-file)]
+   [ :if-not-mode gorepl-mode "Send"
+    ("r" "Region" gorepl-send-region)
+    ("c" "Line+Step" gorepl-send-line-and-step :transient t)
+    ("l" "Line" gorepl-send-line)]
    ["REPL"
-    ("t" "Import <pkg path>" gorepl-import)
-    ("y" "Print this source" gorepl-print)
-    ("u" "Write this source to <filename>" gorepl-write)
-    ("o" "List `these' actual command" gorepl-help)
-    ("r" "Restart this REPL" gorepl-restart)
+    ("i" "Import <pkg path>" gorepl-import)
+    ("p" "Print this source" gorepl-print)
+    ("w" "Write this source to <filename>" gorepl-write)
+    ("h" "List `these' actual command" gorepl-help)
+    ("R" "Restart this REPL" gorepl-restart)
     ("q" "Quit this REPL" gorepl-quit)]])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -231,16 +234,14 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defvar gorepl-minor-mode-map
-  (let ((map (make-sparse-keymap)))
-            (define-key map (kbd "C-c C-g") #'gorepl-run)
-            (define-key map (kbd "C-c C-l") #'gorepl-run-load-current-file)
-            (define-key map (kbd "C-c C-e") #'gorepl-eval-region)
-            (define-key map (kbd "C-c C-r") #'gorepl-eval-line)
-            map)
-  "Mode map for `gorepl-minor-mode'.")
+(defvar-keymap gorepl-minor-mode-map
+  :doc "Mode map for `gorepl-minor-mode'."
+  "C-c C-g" #'gorepl-run
+  "C-c C-l" #'gorepl-load-file
+  "C-c C-r" #'gorepl-send-region
+  "C-c C-e" #'gorepl-send-line)
 
-(defcustom gorepl-minor-mode-lighter " Gorepl"
+(defcustom gorepl-minor-mode-lighter " GoRepl"
   "Text displayed in the mode line (Lighter) if `gorepl-minor-mode' is active."
   :group 'gorepl
   :type 'string)
