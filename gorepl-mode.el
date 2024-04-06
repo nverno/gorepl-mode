@@ -4,7 +4,7 @@
 
 ;; Author: Manuel Alonso <manuteali@gmail.com>
 ;; Maintainer: Manuel Alonso <manuteali@gmail.com>
-;; URL: http://www.github.com/manute/gorepl-mode
+;; URL: http://www.github.com/nverno/gorepl-mode
 ;; Version: 1.0.0
 ;; Package-Requires: ((emacs "24") (s "1.11.0") (f "0.19.0"))
 ;; Keywords: languages, go, golang, gorepl
@@ -56,8 +56,17 @@
   "Default buffer name for the Gore repl."
   :type 'string)
 
-(defconst gorepl-version "1.0.0")
+(defcustom gorepl-history-filename nil
+  "File to save/load repl history."
+  :type 'string)
 
+(defcustom gorepl-font-lock-mode
+  (cond
+   ((fboundp 'go-ts-mode) #'go-ts-mode)
+   ((fboundp 'go-mode) #'go-mode)
+   (t nil))
+  "Major mode to font-lock input."
+  :type 'function)
 
 (defun gorepl-buffer ()
   "Return inferior Gore buffer."
@@ -97,20 +106,52 @@ ARGS override `gorepl-arguments'."
       (pop-to-buffer buffer))
     buffer))
 
-(define-derived-mode gorepl-mode comint-mode "GoREPL"
+(defvar gorepl-mode-keywords
+  '("help" "import" "type" "print" "write" "clear" "doc" "quit"))
+
+(defvar gorepl-mode-font-lock-keywords
+  `((,(rx-to-string
+       `(seq bol (* (syntax whitespace)) ":" (or ,@gorepl-mode-keywords)))
+     . font-lock-keyword-face)))
+
+(defun gorepl-mode-completion-at-point ()
+  "Completion at point for Gore repl commands."
+  (let ((end (point))
+        (beg (save-excursion
+               (goto-char (comint-line-beginning-position))
+               (skip-syntax-forward " " (line-end-position))
+               (point))))
+    (when (and (eq ?: (char-after beg))
+               (setq beg (1+ beg)))
+      (list beg end
+            (completion-table-with-cache (lambda (_s) gorepl-mode-keywords))
+            :exclusive 'no))))
+
+(defvar-keymap gorepl-mode-map
+  :doc "Keymap in Gore repl."
+  "TAB" #'completion-at-point)
+
+(define-derived-mode gorepl-mode comint-mode "Gore"
   "Major mode for interacting with an inferior Go REPL process."
-  (setq-local comint-prompt-regexp "^gore> ")
-  (setq-local comint-prompt-read-only t))
+  (setq-local comint-input-ring-file-name gorepl-history-filename
+              comint-input-history-ignore "^:"
+              comint-input-ignoredups t
+              comint-prompt-regexp "^gore> "
+              comint-prompt-read-only t
+              comint-highlight-input nil
+              comint-indirect-setup-function gorepl-font-lock-mode)
+  (setq-local font-lock-defaults '(gorepl-mode-font-lock-keywords t))
+  (add-hook 'completion-at-point-functions #'gorepl-mode-completion-at-point nil t)
+  (when (null comint-use-prompt-regexp)
+    (comint-fontify-input-mode))
+  (when gorepl-history-filename
+    (comint-read-input-ring t)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; API
 ;;;;;;;;;;;;;;;;;;;;;;
 
-(defun gorepl-version ()
-  "Display GoREPL's version."
-  (interactive)
-  (message "GOREPL %s" gorepl-version))
-
+;;;###autoload
 (defun gorepl-run (&optional prompt show)
   "Start or switch to the GoREPL buffer.
 With prefix PROMPT, read command to run Gore. When called interactively, or
