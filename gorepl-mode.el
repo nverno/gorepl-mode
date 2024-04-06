@@ -132,7 +132,10 @@ sending regions to the inferior process."
 (defvar gorepl-mode-font-lock-keywords
   `((,(rx-to-string
        `(seq bol (* (syntax whitespace)) ":" (or ,@gorepl-mode-keywords)))
-     . font-lock-keyword-face)))
+     . font-lock-keyword-face)
+    ;; syntax errors, eg. invalid operation: division by zero
+    ("^\\([a-z]+\\(?: [a-z]+\\)*\\):" (1 font-lock-warning-face))
+    ("^missing return" . font-lock-warning-face)))
 
 (defun gorepl-mode-completion-at-point ()
   "Completion at point for Gore repl commands."
