@@ -132,7 +132,10 @@ sending regions to the inferior process."
 (defvar gorepl-mode-font-lock-keywords
   `((,(rx-to-string
        `(seq bol (* (syntax whitespace)) ":" (or ,@gorepl-mode-keywords)))
-     . font-lock-keyword-face)))
+     . font-lock-keyword-face)
+    ;; syntax errors, eg. invalid operation: division by zero
+    ("^\\([a-z]+\\(?: [a-z]+\\)*\\):" (1 font-lock-warning-face))
+    ("^missing return" . font-lock-warning-face)))
 
 (defun gorepl-mode-completion-at-point ()
   "Completion at point for Gore repl commands."
@@ -152,7 +155,7 @@ sending regions to the inferior process."
   "TAB" #'completion-at-point)
 
 (define-derived-mode gorepl-mode comint-mode "Gore"
-  "Major mode for interacting with an inferior Go REPL process."
+  "Major mode for interacting with an inferior Go repl process."
   (setq-local comint-input-ring-file-name gorepl-history-filename
               comint-input-history-ignore "^:"
               comint-input-ignoredups t
@@ -174,7 +177,7 @@ sending regions to the inferior process."
 
 ;;;###autoload
 (defun gorepl-run (&optional prompt show)
-  "Start or switch to the GoREPL buffer.
+  "Start or switch to the Go repl buffer.
 With prefix PROMPT, read command to run Gore. When called interactively, or
 if SHOW is non-nil, switch to the repl buffer."
   (interactive (list current-prefix-arg t))
@@ -193,7 +196,7 @@ if SHOW is non-nil, switch to the repl buffer."
       (comint-send-input))))
 
 (defun gorepl-send-region (begin end)
-  "Send region selected to Gore."
+  "Send region from BEGIN to END to Gore process."
   (interactive "r")
   (gorepl-send-string (buffer-substring-no-properties begin end)))
 
@@ -205,7 +208,7 @@ if SHOW is non-nil, switch to the repl buffer."
     (gorepl-send-region (line-beginning-position) (line-end-position arg))))
 
 (defun gorepl-load-file (filename &optional prompt show)
-  "Run a GoREPL with a context file in it.
+  "Run a Go repl with a context file in it.
 With prefix, prompt for FILENAME, otherwise load current buffer file.
 With multiple prefix arguments PROMPT to edit run command."
   (interactive (list (if current-prefix-arg (read-file-name "Load file: ")
@@ -218,19 +221,19 @@ With multiple prefix arguments PROMPT to edit run command."
    show))
 
 (defun gorepl-import (pkg)
-  "Import <pkg path>"
+  "Import PKG in repl."
   (interactive (list (read-string "Package path: ")))
   (when (s-contains? " " pkg)
     (user-error "Package names can't contain a space."))
   (gorepl-send-string (format ":import %s" pkg)))
 
 (defun gorepl-print ()
-  "Print the source code from this session"
+  "Print the source code from this session."
   (interactive)
   (gorepl-send-string ":print"))
 
 (defun gorepl-write ()
-  "Write the source code from this session out to a file"
+  "Write the source code from this session out to a file."
   (interactive)
   (let ((name (read-file-name "Output file name? ")))
     (when (s-blank? name)
@@ -245,12 +248,12 @@ With multiple prefix arguments PROMPT to edit run command."
     (gorepl-send-string (format ":write %s" name))))
 
 (defun gorepl-doc (exp-or-pkg)
-  "Show documentation on <expression or package "
+  "Show documentation for EXP-OR-PKG in repl."
   (interactive (list (read-string "Expression or package? ")))
   (gorepl-send-string (format ":doc %s" exp-or-pkg)))
 
 (defun gorepl-help ()
-  "Show help."
+  "Show help in repl."
   (interactive)
   (gorepl-send-string ":help"))
 
@@ -260,7 +263,8 @@ With multiple prefix arguments PROMPT to edit run command."
   (gorepl-send-string ":quit"))
 
 (defun gorepl-restart (&optional show)
-  "Restart gore. In others words: start a fresh gore session."
+  "Restart gore.
+In others words. start a fresh gore session."
   (interactive (list t))
   (gorepl-quit)
   (sleep-for 1)
@@ -274,6 +278,7 @@ With multiple prefix arguments PROMPT to edit run command."
 
 ;;;###autoload(autoload 'gorepl-menu "gorepl-mode" nil t)
 (transient-define-prefix gorepl-menu ()
+  "Gore repl menu."
   [[ :if-not-mode gorepl-mode "Run"
     ("d" "Run empty" gorepl-run)
     ("f" "Run file" gorepl-load-file)]
@@ -281,13 +286,13 @@ With multiple prefix arguments PROMPT to edit run command."
     ("r" "Region" gorepl-send-region)
     ("c" "Line+Step" gorepl-send-line-and-step :transient t)
     ("l" "Line" gorepl-send-line)]
-   ["REPL"
+   ["Repl"
     ("i" "Import <pkg path>" gorepl-import)
     ("p" "Print this source" gorepl-print)
     ("w" "Write this source to <filename>" gorepl-write)
-    ("h" "List `these' actual command" gorepl-help)
-    ("R" "Restart this REPL" gorepl-restart)
-    ("q" "Quit this REPL" gorepl-quit)]])
+    ("h" "Show help in repl" gorepl-help)
+    ("R" "Restart this repl" gorepl-restart)
+    ("q" "Quit this repl" gorepl-quit)]])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; DEFINE MINOR MODE
