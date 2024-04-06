@@ -68,6 +68,9 @@
   "Major mode to font-lock input."
   :type 'function)
 
+(defvar gorepl-prompt "gore> ")
+;; (defvar gorepl-prompt-continue "..... ")
+
 (defun gorepl-buffer ()
   "Return inferior Gore buffer."
   (if (derived-mode-p 'gorepl-mode)
@@ -86,6 +89,23 @@ ARGS override `gorepl-arguments'."
   (let ((default (concat gorepl-command
                          " " (mapconcat 'identity (or args gorepl-arguments) " "))))
     (if prompt (read-shell-command "Run gore: " default) default)))
+
+(defun gorepl--preoutput-filter (string)
+  "Filter for `comint-preoutput-filter-functions' to process STRING.
+Filters extra prompt characters that accumulate in the output when
+sending regions to the inferior process."
+  (setq string (replace-regexp-in-string
+                (rx-to-string
+                 `(: bol
+                     (* (regexp ,gorepl-prompt))
+                     (group (regexp ,gorepl-prompt) (* nonl))))
+                "\\1" string))
+  (if (and (not (bolp))
+           (string-match-p (concat "\\`" gorepl-prompt) string))
+      ;; Stop prompts from stacking up when sending regions:
+      ;; gore> gore> ...
+      (concat "\n" string)
+    string))
 
 ;; MANY THANKS to masteringenmacs for this:
 ;; https://www.masteringemacs.org/article/comint-writing-command-interpreter
@@ -136,10 +156,11 @@ ARGS override `gorepl-arguments'."
   (setq-local comint-input-ring-file-name gorepl-history-filename
               comint-input-history-ignore "^:"
               comint-input-ignoredups t
-              comint-prompt-regexp "^gore> "
+              comint-prompt-regexp (concat "^" gorepl-prompt)
               comint-prompt-read-only t
               comint-highlight-input nil
               comint-indirect-setup-function gorepl-font-lock-mode)
+  (add-hook 'comint-preoutput-filter-functions #'gorepl--preoutput-filter nil t)
   (setq-local font-lock-defaults '(gorepl-mode-font-lock-keywords t))
   (add-hook 'completion-at-point-functions #'gorepl-mode-completion-at-point nil t)
   (when (null comint-use-prompt-regexp)
