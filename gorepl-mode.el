@@ -235,17 +235,20 @@ With multiple prefix arguments PROMPT to edit run command."
 (defun gorepl-write ()
   "Write the source code from this session out to a file."
   (interactive)
-  (let ((name (read-file-name "Output file name? ")))
-    (when (s-blank? name)
-      (user-error "No file name given."))
+  (let ((fname (read-file-name "Output file name? ")))
+    (when (s-blank? fname)
+      (user-error "No file fname given."))
+    (setq fname (expand-file-name fname))
+    (unless (file-exists-p fname)
+      (f-touch fname))
     (f-write-text (format "// gore dump on `%s' by `%s'\n\n"
                           (format-time-string
                            "%a %b %d %H:%M:%S %Z %Y"
                            (current-time))
                           (user-login-name))
                   'utf-8
-                  name)
-    (gorepl-send-string (format ":write %s" name))))
+                  fname)
+    (gorepl-send-string (format ":write %s" fname))))
 
 (defun gorepl-doc (exp-or-pkg)
   "Show documentation for EXP-OR-PKG in repl."
